@@ -169,6 +169,10 @@ func deleteRoom(w http.ResponseWriter, r *http.Request, store roomStore, id int6
 }
 
 func roomError(w http.ResponseWriter, err error) {
+	if errors.Is(err, rooms.ErrHasReservations) {
+		writeError(w, http.StatusConflict, "room_has_reservations", "room has reservations")
+		return
+	}
 	if errors.Is(err, rooms.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not_found", "room not found")
 		return

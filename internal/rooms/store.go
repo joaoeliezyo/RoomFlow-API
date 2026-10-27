@@ -9,6 +9,7 @@ import (
 )
 
 var ErrNotFound = errors.New("room not found")
+var ErrHasReservations = errors.New("room has reservations")
 
 type Room struct {
 	ID       int64  `json:"id"`
@@ -85,6 +86,10 @@ func (s *Store) Update(ctx context.Context, id int64, update Update) (Room, erro
 func (s *Store) Delete(ctx context.Context, id int64) error {
 	tag, err := s.db.Exec(ctx, `DELETE FROM rooms WHERE id = $1`, id)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" && pgErr.ConstraintName == "reservations_room_id_fkey" {
+			return ErrHasReservations
+		}
 		return err
 	}
 	if tag.RowsAffected() == 0 {

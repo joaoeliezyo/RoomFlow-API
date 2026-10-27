@@ -26,7 +26,7 @@ func TestHealth(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 			response := httptest.NewRecorder()
-			NewHandler(fakeDB{tc.err}, nil).ServeHTTP(response, request)
+			NewHandler(fakeDB{tc.err}, nil, nil).ServeHTTP(response, request)
 			if response.Code != tc.status || strings.TrimSpace(response.Body.String()) != tc.body {
 				t.Fatalf("response = %d %s", response.Code, response.Body.String())
 			}
@@ -48,7 +48,7 @@ func TestHTTPErrorResponses(t *testing.T) {
 		{http.MethodGet, "/unknown", http.StatusNotFound, `{"error":{"code":"not_found","message":"resource not found"}}`},
 	} {
 		response := httptest.NewRecorder()
-		NewHandler(fakeDB{}, nil).ServeHTTP(response, httptest.NewRequest(tc.method, tc.path, nil))
+		NewHandler(fakeDB{}, nil, nil).ServeHTTP(response, httptest.NewRequest(tc.method, tc.path, nil))
 		if response.Code != tc.status || strings.TrimSpace(response.Body.String()) != tc.body {
 			t.Fatalf("%s %s: response = %d %s", tc.method, tc.path, response.Code, response.Body.String())
 		}

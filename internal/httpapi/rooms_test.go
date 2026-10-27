@@ -80,7 +80,7 @@ func (s *memoryRooms) Delete(_ context.Context, id int64) error {
 func requestRooms(t *testing.T, store *memoryRooms, method, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	w := httptest.NewRecorder()
-	NewHandler(fakeDB{}, store).ServeHTTP(w, httptest.NewRequest(method, path, strings.NewReader(body)))
+	NewHandler(fakeDB{}, store, nil).ServeHTTP(w, httptest.NewRequest(method, path, strings.NewReader(body)))
 	return w
 }
 
@@ -151,5 +151,14 @@ func TestRoomStoreErrorIsInternal(t *testing.T) {
 	got := requestRooms(t, store, "GET", "/rooms", "")
 	if got.Code != 500 || strings.Contains(got.Body.String(), "database details") {
 		t.Fatalf("internal error: %d %s", got.Code, got.Body.String())
+	}
+}
+
+func TestRoomDeleteWithReservations(t *testing.T) {
+	store := newMemoryRooms()
+	store.err = rooms.ErrHasReservations
+	got := requestRooms(t, store, "DELETE", "/rooms/1", "")
+	if got.Code != 409 || !strings.Contains(got.Body.String(), `"room_has_reservations"`) {
+		t.Fatalf("room with reservations: %d %s", got.Code, got.Body.String())
 	}
 }
