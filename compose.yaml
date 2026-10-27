@@ -47,7 +47,7 @@ services:
 
   test:
     profiles: [test]
-    image: golang:1.27.3-alpine
+    image: golang:1.27.3-bookworm
     working_dir: /src
     volumes:
       - .:/src:ro

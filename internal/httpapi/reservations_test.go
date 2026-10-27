@@ -115,6 +115,7 @@ func TestReservationInvalidRequests(t *testing.T) {
 		`{"room_id":1,"starts_at":"2026-11-10T10:00:00Z","ends_at":"2026-11-10T09:00:00Z"}`,
 		`{"room_id":1,"starts_at":"2026-11-10T09:00:00Z","ends_at":"2026-11-10T09:00:00Z"}`,
 		`{"room_id":1,"starts_at":"2026-11-10T09:00:00Z","ends_at":"2026-11-10T10:00:00Z","extra":1}`,
+		`{"room_id":1,"room_id":2,"starts_at":"2026-11-10T09:00:00Z","ends_at":"2026-11-10T10:00:00Z"}`,
 		valid + valid,
 	} {
 		got := reservationRequest(t, store, "POST", "/reservations", body)

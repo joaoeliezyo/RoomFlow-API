@@ -16,6 +16,9 @@ func testPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
+		if os.Getenv("REQUIRE_INTEGRATION_TESTS") == "1" {
+			t.Fatal("TEST_DATABASE_URL is required in integration mode")
+		}
 		t.Skip("set TEST_DATABASE_URL to run PostgreSQL integration tests")
 	}
 	pool, err := pgxpool.New(context.Background(), url)
@@ -205,4 +208,80 @@ func TestConcurrentOverlap(t *testing.T) {
 		t.Fatalf("concurrent inserts: success=%d conflict=%d", success, conflict)
 	}
 	t.Logf("simultaneous inserts on separate connections: success=%d conflict=%d", success, conflict)
+}
+
+func TestConcurrentCancel(t *testing.T) {
+	pool := testPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	room, err := rooms.NewStore(pool).Create(ctx, "Concurrent cancellation", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(), `DELETE FROM reservations WHERE room_id = $1`, room.ID); err != nil {
+			t.Errorf("clean up cancellation reservation: %v", err)
+		}
+		if err := rooms.NewStore(pool).Delete(context.Background(), room.ID); err != nil {
+			t.Errorf("clean up cancellation room: %v", err)
+		}
+	})
+	start := time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC)
+	created, err := NewStore(pool).Create(ctx, room.ID, start, start.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn1, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn1.Release()
+	conn2, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn2.Release()
+	type outcome struct {
+		reservation Reservation
+		err         error
+	}
+	begin := make(chan struct{})
+	results := make(chan outcome, 2)
+	var wg sync.WaitGroup
+	for _, conn := range []*pgxpool.Conn{conn1, conn2} {
+		wg.Add(1)
+		go func(conn *pgxpool.Conn) {
+			defer wg.Done()
+			<-begin
+			reservation, err := NewStore(conn).Cancel(ctx, created.ID)
+			results <- outcome{reservation: reservation, err: err}
+		}(conn)
+	}
+	close(begin)
+	wg.Wait()
+	close(results)
+	success, alreadyCancelled := 0, 0
+	var cancelledAt time.Time
+	for result := range results {
+		switch {
+		case result.err == nil:
+			success++
+			if result.reservation.CancelledAt == nil {
+				t.Fatal("successful cancellation has no timestamp")
+			}
+			cancelledAt = *result.reservation.CancelledAt
+		case errors.Is(result.err, ErrAlreadyCancelled):
+			alreadyCancelled++
+		default:
+			t.Fatalf("unexpected concurrent cancellation error: %v", result.err)
+		}
+	}
+	if success != 1 || alreadyCancelled != 1 {
+		t.Fatalf("concurrent cancellations: success=%d already_cancelled=%d", success, alreadyCancelled)
+	}
+	stored, err := NewStore(pool).Get(ctx, created.ID)
+	if err != nil || stored.CancelledAt == nil || !stored.CancelledAt.Equal(cancelledAt) {
+		t.Fatalf("stored cancellation timestamp = %+v, %v; expected %v", stored, err, cancelledAt)
+	}
+	t.Logf("simultaneous cancellations on separate connections: success=%d already_cancelled=%d", success, alreadyCancelled)
 }

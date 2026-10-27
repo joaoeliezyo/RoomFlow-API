@@ -13,6 +13,9 @@ import (
 func TestStoreIntegration(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
+		if os.Getenv("REQUIRE_INTEGRATION_TESTS") == "1" {
+			t.Fatal("TEST_DATABASE_URL is required in integration mode")
+		}
 		t.Skip("set TEST_DATABASE_URL to run PostgreSQL integration test")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

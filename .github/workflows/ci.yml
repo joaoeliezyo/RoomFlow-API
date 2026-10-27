@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: roomflow_test
+          POSTGRES_USER: roomflow
+          POSTGRES_PASSWORD: roomflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U roomflow -d roomflow_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://roomflow:roomflow@127.0.0.1:5432/roomflow_test?sslmode=disable
+      REQUIRE_INTEGRATION_TESTS: "1"
+      PGPASSWORD: roomflow
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.3"
+          cache: true
+      - name: Apply migration 001
+        run: psql -h 127.0.0.1 -U roomflow -d roomflow_test -v ON_ERROR_STOP=1 -f db/migrations/001_create_rooms.up.sql
+      - name: Apply migration 002
+        run: psql -h 127.0.0.1 -U roomflow -d roomflow_test -v ON_ERROR_STOP=1 -f db/migrations/002_create_reservations.up.sql
+      - name: Test
+        run: go test ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Race detector
+        run: go test -race ./...

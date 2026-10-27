@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -58,15 +59,46 @@ func methodNotAllowed(w http.ResponseWriter, allow string) {
 
 func decodeBody(w http.ResponseWriter, r *http.Request, dst any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(dst); err != nil {
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
 		return err
 	}
-	if err := decoder.Decode(new(any)); err != io.EOF {
+	keys := json.NewDecoder(bytes.NewReader(raw))
+	first, err := keys.Token()
+	if err != nil {
+		return err
+	}
+	if first != json.Delim('{') {
+		return errors.New("expected a JSON object")
+	}
+	seen := make(map[string]bool)
+	for keys.More() {
+		token, err := keys.Token()
+		if err != nil {
+			return err
+		}
+		key := token.(string)
+		if seen[key] {
+			return errors.New("duplicate JSON field")
+		}
+		seen[key] = true
+		var value json.RawMessage
+		if err := keys.Decode(&value); err != nil {
+			return err
+		}
+	}
+	if _, err := keys.Token(); err != nil {
+		return err
+	}
+	if _, err := keys.Token(); err != io.EOF {
 		if err == nil {
 			return errors.New("multiple JSON values")
 		}
+		return err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
 		return err
 	}
 	return nil
@@ -82,8 +114,8 @@ func createRoom(w http.ResponseWriter, r *http.Request, store roomStore) {
 		return
 	}
 	body.Name = strings.TrimSpace(body.Name)
-	if body.Name == "" || body.Capacity < 1 {
-		writeError(w, http.StatusBadRequest, "invalid_room", "name is required and capacity must be positive")
+	if body.Name == "" || strings.ContainsRune(body.Name, 0) || body.Capacity < 1 || body.Capacity > math.MaxInt32 {
+		writeError(w, http.StatusBadRequest, "invalid_room", "name must be non-empty text without NUL and capacity must be between 1 and 2147483647")
 		return
 	}
 	room, err := store.Create(r.Context(), body.Name, body.Capacity)
@@ -133,8 +165,8 @@ func updateRoom(w http.ResponseWriter, r *http.Request, store roomStore, id int6
 			return
 		}
 		var name string
-		if err := json.Unmarshal(body.Name, &name); err != nil || strings.TrimSpace(name) == "" {
-			writeError(w, http.StatusBadRequest, "invalid_room", "name must be non-empty text")
+		if err := json.Unmarshal(body.Name, &name); err != nil || strings.TrimSpace(name) == "" || strings.ContainsRune(name, 0) {
+			writeError(w, http.StatusBadRequest, "invalid_room", "name must be non-empty text without NUL")
 			return
 		}
 		name = strings.TrimSpace(name)
@@ -146,8 +178,8 @@ func updateRoom(w http.ResponseWriter, r *http.Request, store roomStore, id int6
 			return
 		}
 		var capacity int
-		if err := json.Unmarshal(body.Capacity, &capacity); err != nil || capacity < 1 {
-			writeError(w, http.StatusBadRequest, "invalid_room", "capacity must be a positive integer")
+		if err := json.Unmarshal(body.Capacity, &capacity); err != nil || capacity < 1 || capacity > math.MaxInt32 {
+			writeError(w, http.StatusBadRequest, "invalid_room", "capacity must be an integer between 1 and 2147483647")
 			return
 		}
 		update.Capacity = &capacity
