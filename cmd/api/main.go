@@ -13,6 +13,7 @@ import (
 
 	"github.com/Eliezyo/RoomFlow-API/internal/config"
 	"github.com/Eliezyo/RoomFlow-API/internal/httpapi"
+	"github.com/Eliezyo/RoomFlow-API/internal/rooms"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -45,7 +46,7 @@ func run() error {
 
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),
-		Handler:           httpapi.NewHandler(pool),
+		Handler:           httpapi.NewHandler(pool, rooms.NewStore(pool)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	serverErrors := make(chan error, 1)

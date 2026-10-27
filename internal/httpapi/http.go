@@ -11,8 +11,9 @@ type databasePinger interface {
 	Ping(context.Context) error
 }
 
-func NewHandler(db databasePinger) http.Handler {
+func NewHandler(db databasePinger, roomStore roomStore) http.Handler {
 	mux := http.NewServeMux()
+	registerRooms(mux, roomStore)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", http.MethodGet)
